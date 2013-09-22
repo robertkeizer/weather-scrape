@@ -1,0 +1,9 @@
+{
+    "name": "weather-scrape",
+    "private": true,
+    "version": "0.0.1",
+    "dependencies": {
+        "logging": "latest",
+	"async": "latest"
+    }
+}
