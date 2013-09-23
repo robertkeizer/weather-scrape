@@ -43,7 +43,7 @@ for station in stations
 				_o.query = _query
 				_options.push _o
 
-#_options = [ _options[0] ]
+_options = [ _options[0] ]
 
 async.mapLimit _options, 100, ( _option_obj, cb ) ->
 	log "Making request for #{_option_obj.query.stationID} #{_option_obj.query.Year}-#{_option_obj.query.Month}-#{_option_obj.query.Day}"
@@ -70,14 +70,12 @@ async.mapLimit _options, 100, ( _option_obj, cb ) ->
 	
 	# Shove the docs into a couchdb database for now.
 	#TODO.
-	log "Finished grabbing data.."
+	log res
 
-parse_csv = ( data ) ->
-	# Split out into a multi-dimensional array.
-
+parse_csv = ( csv_data ) ->
 	_long_lines	= [ ]
 	_longest	= 0
-	for line in data.split "\n"
+	for line in csv_data.split "\n"
 		_line = line.split ","
 
 		# If there is a new longest line, reset the var..
@@ -87,49 +85,51 @@ parse_csv = ( data ) ->
 
 		# If the current line is the same length as the longest, push onto the array.
 		if _line.length == _longest
+			# Strip out the bad values of the keys and values..
 			_long_lines.push _line
+	
+	# Iterate through the keys and create the
+	# keys array.
+	keys = [ ]
+	for _key in _long_lines[0]
 
-	_r	= { } 
-	_keys	= [ ]
+		# Replace any characters that we don't either
+		# want to replace or that don't belog with nothing..
+		_key = _key.replace /[^a-zA-Z_\/ ]/g, ""
 
-	keys	= _long_lines[0]
+		# Replace slashes and spaces with underscores.
+		_key = _key.replace /[\/\ ]/g, "_"
 
-	# Iterate through and sanitze the keys.
-	for key in keys
+		# Lowercase the entire thing.
+		_key = _key.toLowerCase( )
 
-		# Strip out the quotes in the keys.
-		key = key.replace /\"/g, ""
+		keys.push _key
 
-		# replace spaces and braces with underscored..
-		key = key.replace /[\ \(\)]/g, "_"
+	_return = [ ]
 
-		# Remove any unwanted characters.
-		key = key.replace /[^a-zA-Z_]/g, ""
+	# Iterate over the actual line values..
+	for _line in _long_lines[1..]
+		
+		# The object that we're going to populate with valid values..
+		_r = { }
 
-		# Replace any double underscores with a single one.
-		key = key.replace /__/g, "_"
+		# Iterate over each value..
+		for i in [0.._line.length-1]
 
-		# Trim any trailing underscores..
-		key = key.replace /_$/, ""
+			# Sanitize the value..
+			_val = _line[i]
+			_val = _val.replace /[^0-9\.\-]/g, ""
+			
+			# Try and parse it as a float.
+			_float	= parseFloat _val
 
-		# Shove them into the valid keys array.
-		_keys.push key
+			# If we can't parse it as a float, simply set the val to be whatever
+			# we already have.
+			if isNaN _float
+				_r[keys[i]] = _val
+			else
+				_r[keys[i]] = _float
 
-	# Create the array objects in the return..
-	for _key in _keys
-		_r[_key] = [ ]
+		_return.push _r
 
-	# Run through the value lines..
-	for value_line in _long_lines[1..]
-
-		# For each value line index
-		for i in [0..value_line.length-1]
-
-			# Sanitze the value..
-			_value = value_line[i]
-
-			# Remove the quotes..
-			_value = _value.replace /\"/g, ""
-
-			_r[_keys[i]].push _value
-	return _r
+	return _return
