@@ -8,21 +8,10 @@ util	= require "util"
 stations = [ { name: "Winnipeg at The Forks", id: 28051 } ]
 
 # The years and months we want to grab.
-years	= [ 2013 ]
-
-# Note that we build up the months objects
-# with simple logic about how many days.
-months	= []
-for i in [1...12]
-	if i in [ 9, 4, 6, 11 ]
-		months.push { month: i, days: 30 }
-	else if i is 2
-		months.push { month: i, days: 28 }
-	else
-		months.push { month: i, days: 31 }
+years	= [ 2000...2013 ]
 
 # Some base arguments for the request.
-args = { "format": "csv", "timeframe": 2, "submit": "Download Data" }
+args = { "format": "csv", "timeframe": 2, "submit": "Download Data", "Day": 1, "Month": 1 }
 
 _options = [ ]
 
@@ -31,19 +20,13 @@ _options = [ ]
 # enumeration so as to allow mapLimit.
 for station in stations
 	for year in years
-		for month_obj in months
-			month	= month_obj.month
-			days	= month_obj.days
-			for day in [1...days]
-				_o = url.parse "http://climate.weather.gc.ca/climateData/bulkdata_e.html"
-				delete _o['search']
-				_query = { "stationID": station.id, "Year": year, "Month": month, "Day": day }
-				for key,val of args
-					_query[key] = val
-				_o.query = _query
-				_options.push _o
-
-_options = [ _options[0] ]
+		_o = url.parse "http://climate.weather.gc.ca/climateData/bulkdata_e.html"
+		delete _o['search']
+		_query = { "stationID": station.id, "Year": year }
+		for key,val of args
+			_query[key] = val
+		_o.query = _query
+		_options.push _o
 
 async.mapLimit _options, 100, ( _option_obj, cb ) ->
 	log "Making request for #{_option_obj.query.stationID} #{_option_obj.query.Year}-#{_option_obj.query.Month}-#{_option_obj.query.Day}"
@@ -57,7 +40,7 @@ async.mapLimit _options, 100, ( _option_obj, cb ) ->
 
 		res.on "end", ( ) ->
 			log "Got data for #{_option_obj.query.stationID} #{_option_obj.query.Year}-#{_option_obj.query.Month}-#{_option_obj.query.Day}"
-			cb null, { stationID: _option_obj.query.stationID, data: parse_csv _r }
+			cb null, parse_csv _r
 
 	req.on "error", ( err ) ->
 		cb "Unable to get data for station '#{station.name}': #{err}"
@@ -67,10 +50,25 @@ async.mapLimit _options, 100, ( _option_obj, cb ) ->
 	if err
 		log err
 		process.exit 1
+
+	# Collapse into a single data set.
+	_data = [ ]
+	for o in res
+		for x in o
+			_data.push x
+
+	# Do somthing with the data.. such as visualize it!
+	log "Done!"
 	
-	# Shove the docs into a couchdb database for now.
-	#TODO.
-	log res
+	###
+	visualize = require "pca-visualize"
+	server = new visualize.server { "port": 1339 }, _data
+	server.start ( err ) ->
+		if err
+			log "Unable to start the server: #{err}"
+			process.exit 1
+		log "Started server.."
+	###
 
 parse_csv = ( csv_data ) ->
 	_long_lines	= [ ]
@@ -123,11 +121,8 @@ parse_csv = ( csv_data ) ->
 			# Try and parse it as a float.
 			_float	= parseFloat _val
 
-			# If we can't parse it as a float, simply set the val to be whatever
-			# we already have.
-			if isNaN _float
-				_r[keys[i]] = _val
-			else
+			# We only want floats..
+			if not isNaN _float
 				_r[keys[i]] = _float
 
 		_return.push _r
